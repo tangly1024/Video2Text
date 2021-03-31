@@ -28,17 +28,24 @@ def get_file_name(file_path):
     return os.path.splitext(temp_filename)
 
 
+def get_audio_duration(voice_file):
+    """
+    获取音频时长
+    :param voice_file:
+    :return:
+    """
+    # 获取音频时长
+    f = wave.open(voice_file, "rb")
+    return int(f.getparams()[3] / f.getparams()[2])
+
+
 def split_file(voice_file, project_name):
     """
     根据音频文件时长分割
     :param voice_file:
     :return: file_array[]
     """
-    # 获取音频时长
-    f = wave.open(voice_file, "rb")
-    time_length = int(f.getparams()[3] / f.getparams()[2])
-    print('音频文件时长 %s' % time_length)
-
+    time_length = get_audio_duration(voice_file)
     # 音频分割输出
     read_audio = AudioSegment.from_wav(voice_file)
     # 创建分割输出文件夹
@@ -56,18 +63,18 @@ def split_file(voice_file, project_name):
     return res
 
 
-def convert_by_google(voice_file, dst_file_name, semaphore, finished_text_array):
+def convert_by_google(voice_file, dst_file_name, semaphore, finished_text_array, r):
     try:
         semaphore.acquire()
-        r = sr.Recognizer()
         with sr.WavFile(voice_file) as source:
             print("%s 开始转换" % voice_file)
+            # 如果目标文件已经存在就不重新创建
             audio = r.record(source)
             # text = r.recognize_ibm(audio, username='IBM_USERNAME', password='IBM_PASSWORD', language='zh-CN')
             text = r.recognize_google(audio, language='zh-CN')
             open(dst_file_name, 'a+').write(text)
             finished_text_array.append(dst_file_name)
-            time.sleep(1)
+            time.sleep(2)
             temp_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             print('完成 %s %s' % (temp_time, dst_file_name))
     except Exception as e:
@@ -88,9 +95,11 @@ def convert_2_text(file_array):
     threads = []
     semaphore = threading.BoundedSemaphore(5)
     return_text_array = []
+    r = sr.Recognizer()
     for voice_file in file_array:
         dest_file_path = voice_file.replace('.wav', '.txt')
-        t = threading.Thread(target=convert_by_google, args=(voice_file, dest_file_path, semaphore, return_text_array,),
+        t = threading.Thread(target=convert_by_google,
+                             args=(voice_file, dest_file_path, semaphore, return_text_array, r,),
                              name=voice_file)
         threads.append(t)
         t.start()
@@ -124,7 +133,7 @@ def combine_text(text_array, dest_text_file):
 
 if __name__ == '__main__':
     try:
-        voice_path = r'YourVoiceOrVideoPathHere'
+        voice_path = r'/Users/tangly/Documents/文案音频素材/zhouzhou-zimeiti.mp3'
 
         # 按照目标文件名创建文件夹
         project_name = get_file_name(voice_path)[0]
