@@ -67,7 +67,7 @@ def convert_by_google(voice_file, dst_file_name, semaphore, finished_text_array,
     try:
         semaphore.acquire()
         with sr.WavFile(voice_file) as source:
-            print("%s 开始转换" % voice_file)
+            print("开始转换 %s ；目标位置 %s" % (voice_file, dst_file_name))
             # 如果目标文件已经存在就不重新创建
             audio = r.record(source)
             # text = r.recognize_ibm(audio, username='IBM_USERNAME', password='IBM_PASSWORD', language='zh-CN')
@@ -77,9 +77,9 @@ def convert_by_google(voice_file, dst_file_name, semaphore, finished_text_array,
             time.sleep(2)
             temp_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             print('完成 %s %s' % (temp_time, dst_file_name))
-    except Exception as e:
+    except:
         temp_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        logging.error('失败 %s %s' % (temp_time, dst_file_name), e)
+        logging.error('失败 %s %s' % (temp_time, dst_file_name))
     finally:
         semaphore.release()
 
