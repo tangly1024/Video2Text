@@ -4,7 +4,7 @@
 from pydub import AudioSegment
 
 
-def handle_voice_converter(file_path):
+def convert_media_to_wave(file_path):
     """
     统一将mp3,mp4转化为wav格式
     :param file_path:
@@ -13,7 +13,7 @@ def handle_voice_converter(file_path):
     if file_path is None or len(str(file_path)) == 0:
         raise BaseException('输入文件地址为空')
     elif '.mp4' in file_path.lower():
-        return mp4_2_mp3(file_path)
+        return mp3_2_wav(mp4_2_mp3(file_path))
     elif '.mp3' in file_path.lower():
         return mp3_2_wav(file_path)
     elif '.wav' in file_path.lower():
@@ -49,3 +49,7 @@ def mp4_2_mp3(path):
     except Exception as e:
         print(e)
         return None
+
+if __name__ == '__main__':
+    video_path = r'/Users/tangly/Documents/文案音频素材/100w本金，怎么挣？.mp4'
+    mp4_2_mp3(video_path)

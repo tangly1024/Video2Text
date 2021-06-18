@@ -11,7 +11,7 @@ import logging
 import speech_recognition as sr
 from pydub import AudioSegment
 
-from voice_converter import handle_voice_converter
+from voice_converter import convert_media_to_wave
 
 logging.basicConfig(filename='log.log',
                     format='%(asctime)s - %(pathname)s[line:%(lineno)d] - %(levelname)s: %(message)s',
@@ -39,9 +39,10 @@ def get_audio_duration(voice_file):
     return int(f.getparams()[3] / f.getparams()[2])
 
 
-def split_file(voice_file, project_name):
+def split_file(voice_file, file_name_prefix):
     """
     根据音频文件时长分割
+    :param file_name_prefix:
     :param voice_file:
     :return: file_array[]
     """
@@ -57,7 +58,7 @@ def split_file(voice_file, project_name):
     kn = int(time_length / 30) + 1
     res = []
     for i in range(kn):
-        out_put_file_path = split_folder_path + '%s-%d.wav' % (project_name, i + 1)
+        out_put_file_path = split_folder_path + '%s-%d.wav' % (file_name_prefix, i + 1)
         read_audio[i * 30 * 1000:((i + 1) * 30 + 2) * 1000].export(out_put_file_path, format="wav")
         res.append(out_put_file_path)
     return res
@@ -76,7 +77,7 @@ def convert_by_google(voice_file, dst_file_name, semaphore, finished_text_array,
             finished_text_array.append(dst_file_name)
             time.sleep(2)
             temp_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            print('完成 %s %s' % (temp_time, dst_file_name))
+            print('转换完成 %s %s' % (temp_time, dst_file_name))
     except:
         temp_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         logging.error('失败 %s %s' % (temp_time, dst_file_name))
@@ -119,6 +120,7 @@ def combine_text(text_array, dest_text_file):
     :param text_array:
     :return:
     """
+    logging.info('开始合并文件, 数量： %s' % len(text_array))
     with open(dest_text_file, 'a+') as k:
         k.seek(0)
         k.truncate()  # 从第0行开始清空文件
@@ -133,21 +135,21 @@ def combine_text(text_array, dest_text_file):
 
 if __name__ == '__main__':
     try:
-        voice_path = r'/Users/tangly/Documents/文案音频素材/zhouzhou-zimeiti.mp3'
+        media_path = r'【YourFilePathHere】'
 
-        # 按照目标文件名创建文件夹
-        project_name = get_file_name(voice_path)[0]
+        # 获取文件名作为项目名
+        project_name = get_file_name(media_path)[0]
 
         project_path = r'./output/' + project_name
         if not os.path.exists(project_path):
             os.makedirs(project_path)
 
         # 统一预处理文件格式 转Wav
-        voice_path = handle_voice_converter(voice_path)
-        #
+        voice_path = convert_media_to_wave(media_path)
+
         # 根据音频时长分割，过长影响效率
         split_file_array = split_file(voice_path, project_name)
-        #
+
         # 音频转文字
         text_array = convert_2_text(split_file_array)
 
