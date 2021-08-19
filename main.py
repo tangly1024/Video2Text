@@ -4,7 +4,6 @@
 import datetime
 import os
 import threading
-import time
 import wave
 import traceback
 import logging
@@ -58,13 +57,14 @@ def split_file(voice_file, file_name_prefix):
     kn = int(time_length / 30) + 1
     res = []
     for i in range(kn):
-        out_put_file_path = split_folder_path + '%s-%d.wav' % (file_name_prefix, i + 1)
+        suffix = (str(i + 1)).zfill(2)
+        out_put_file_path = split_folder_path + '%s-%s.wav' % (file_name_prefix, suffix)
         read_audio[i * 30 * 1000:((i + 1) * 30 + 2) * 1000].export(out_put_file_path, format="wav")
         res.append(out_put_file_path)
     return res
 
 
-def convert_by_google(voice_file, dst_file_name, semaphore, finished_text_array, r):
+def convert_by_google(voice_file, dst_file_name, semaphore, r):
     try:
         semaphore.acquire()
         with sr.WavFile(voice_file) as source:
@@ -74,8 +74,6 @@ def convert_by_google(voice_file, dst_file_name, semaphore, finished_text_array,
             # text = r.recognize_ibm(audio, username='IBM_USERNAME', password='IBM_PASSWORD', language='zh-CN')
             text = r.recognize_google(audio, language='zh-CN')
             open(dst_file_name, 'a+').write(text)
-            finished_text_array.append(dst_file_name)
-            time.sleep(2)
             temp_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             print('转换完成 %s %s' % (temp_time, dst_file_name))
     except:
@@ -94,18 +92,20 @@ def convert_2_text(file_array):
     # 获取文件夹下的音频文件名
     start_time = datetime.datetime.now()
     threads = []
+    # 信号量 控制API并发请求数为5
     semaphore = threading.BoundedSemaphore(5)
     return_text_array = []
     r = sr.Recognizer()
     for voice_file in file_array:
         dest_file_path = voice_file.replace('.wav', '.txt')
         t = threading.Thread(target=convert_by_google,
-                             args=(voice_file, dest_file_path, semaphore, return_text_array, r,),
+                             args=(voice_file, dest_file_path, semaphore, r,),
                              name=voice_file)
+        return_text_array.append(dest_file_path)
         threads.append(t)
         t.start()
-        time.sleep(1)
-        # 等待所有线程任务结束。
+
+    # 等待所有线程任务结束。
     for t in threads:
         t.join()
     end_time = datetime.datetime.now()
@@ -114,17 +114,18 @@ def convert_2_text(file_array):
     return return_text_array
 
 
-def combine_text(text_array, dest_text_file):
+def combine_text(from_text_array, target_text_file):
     """
     将一组文本文件合并到一个文本中
-    :param text_array:
+    :param target_text_file:  目标文本文件
+    :param from_text_array: 来源文本文件数组
     :return:
     """
-    logging.info('开始合并文件, 数量： %s' % len(text_array))
-    with open(dest_text_file, 'a+') as k:
+    logging.info('开始合并文件, 数量： %s' % len(from_text_array))
+    with open(target_text_file, 'a+') as k:
         k.seek(0)
         k.truncate()  # 从第0行开始清空文件
-        for text_file in text_array:
+        for text_file in from_text_array:
             if os.path.exists(text_file):
                 with open(text_file) as f:
                     k.write(f.read() + "\r\n")
@@ -135,7 +136,7 @@ def combine_text(text_array, dest_text_file):
 
 if __name__ == '__main__':
     try:
-        media_path = r'【YourFilePathHere】'
+        media_path = r'/Users/tangly/Documents/【产品】/文章素材/男女大脑不同.mp4'
 
         # 获取文件名作为项目名
         project_name = get_file_name(media_path)[0]
