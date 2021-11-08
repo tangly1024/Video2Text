@@ -8,21 +8,12 @@ from pydub import AudioSegment
 import speech_recognition as sr
 import datetime
 import threading
-
 import wave
-import logging
+from video_converter.file_utils import get_file_name_and_extension
+from video_converter.log_utils import get_logger
 
-from file_utils import get_file_name_and_extension
+log = get_logger('file_utils')
 
-logger = logging.getLogger()
-
-logging.basicConfig(filename='log.log',
-                    format='%(asctime)s - %(pathname)s[line:%(lineno)d] - %(levelname)s: %(message)s',
-                    level=logging.DEBUG)
-console = logging.StreamHandler()
-console.setLevel(logging.INFO)
-# add the handler to the root logger
-logging.getLogger().addHandler(console)
 
 
 def split_voice_file(voice_file, file_name_prefix, output_path='./', split_length=30):
@@ -49,7 +40,7 @@ def split_voice_file(voice_file, file_name_prefix, output_path='./', split_lengt
         out_put_file_path = split_folder_path + '%s-%s.wav' % (file_name_prefix, suffix)
         read_audio[i * 30 * 1000:((i + 1) * 30 + 2) * 1000].export(out_put_file_path, format="wav")
         res.append(out_put_file_path)
-    logging.debug('源文件分割为[%s]个时长[%s]s的子文件' % (len(res), split_length))
+    log.debug('源文件分割为[%s]个时长[%s]s的子文件' % (len(res), split_length))
     return res
 
 
@@ -69,11 +60,11 @@ def convert_audios_to_text(file_array, max_convert_thread=5, jump_exists_file=Tr
     return_text_array = []
     r = sr.Recognizer()
 
-    logging.debug('启动[%s]个线程对音频文件进行批量转换' % max_convert_thread)
+    log.debug('启动[%s]个线程对音频文件进行批量转换' % max_convert_thread)
     for voice_file in file_array:
         dest_file_path = voice_file.replace('.wav', '.txt')
         if jump_exists_file & os.path.exists(dest_file_path):
-            logging.debug('跳过已存在文件,跳过转换 %s' % dest_file_path)
+            log.warn('跳过已存在文件,跳过转换 %s' % dest_file_path)
             return_text_array.append(dest_file_path)
             continue
         t = threading.Thread(target=convert_by_google,
@@ -88,7 +79,7 @@ def convert_audios_to_text(file_array, max_convert_thread=5, jump_exists_file=Tr
         t.join()
     end_time = datetime.datetime.now()
     last = end_time - start_time
-    logging.debug('音频转换总耗时：[%s]s' % last)
+    log.info('音频转换总耗时：[%s]s' % last)
     return return_text_array
 
 
@@ -104,17 +95,17 @@ def convert_by_google(voice_file, dst_file_name, semaphore, r):
     try:
         semaphore.acquire()
         with sr.WavFile(voice_file) as source:
-            logging.debug("正在转换 %s ；目标位置 %s" % (voice_file, dst_file_name))
+            log.debug("正在转换 %s ；目标位置 %s" % (voice_file, dst_file_name))
             # 如果目标文件已经存在就不重新创建
             audio = r.record(source)
             # text = r.recognize_ibm(audio, username='IBM_USERNAME', password='IBM_PASSWORD', language='zh-CN')
             text = r.recognize_google(audio, language='zh-CN')
             open(dst_file_name, 'a+').write(text)
             temp_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            logging.debug('转换完成 %s %s' % (temp_time, dst_file_name))
+            log.debug('转换完成 %s %s' % (temp_time, dst_file_name))
     except:
         temp_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        logging.error('失败 %s %s' % (temp_time, dst_file_name))
+        log.error('失败 %s %s' % (temp_time, dst_file_name))
     finally:
         semaphore.release()
 
@@ -128,7 +119,7 @@ def get_audio_duration(voice_file):
     # 获取音频时长
     f = wave.open(voice_file, "rb")
     duration = int(f.getparams()[3] / f.getparams()[2])
-    logging.debug('源文件音频总时长 %s s' % duration)
+    log.debug('源文件音频总时长 %s s' % duration)
     return duration
 
 
@@ -141,14 +132,17 @@ def convert_media_to_wave(source_file, target_folder):
     """
     if source_file is None or len(str(source_file)) == 0:
         raise BaseException('输入文件地址为空')
+    elif '.flv'  in source_file.lower():
+        log.debug('FLV转WAV')
+        return mp3_2_wav(video_2_mp3(source_file, target_folder), target_folder)
     elif '.mp4' in source_file.lower():
-        logging.debug('MP4转WAV')
-        return mp3_2_wav(mp4_2_mp3(source_file, target_folder), target_folder)
+        log.debug('MP4转WAV')
+        return mp3_2_wav(video_2_mp3(source_file, target_folder), target_folder)
     elif '.mp3' in source_file.lower():
-        logging.debug('MP3转WAV')
+        log.debug('MP3转WAV')
         return mp3_2_wav(source_file, target_folder)
     elif '.wav' in source_file.lower():
-        logging.debug('源文件格式为WAV，复制到输出目录下')
+        log.debug('源文件格式为WAV，复制到输出目录下')
         (filepath, temp_filename) = os.path.split(source_file)
         taarget_file = target_folder + temp_filename
         copyfile(source_file, taarget_file)
@@ -177,7 +171,7 @@ def mp3_2_wav(source_mp3_file, target_folder, jump_exist_file=True):
 
 
 # 将mp4文件转为mp3音频文件,生成路径仍在原路径中(需要先下载moviepy库)
-def mp4_2_mp3(source_mp4_file, target_folder, jump_exist_file=True):
+def video_2_mp3(source_mp4_file, target_folder, jump_exist_file=True):
     """
     MP4文件转MP3音频
     :param source_mp4_file: 源文件地址
@@ -195,10 +189,10 @@ def mp4_2_mp3(source_mp4_file, target_folder, jump_exist_file=True):
         mp4_audio.write_audiofile(mp3_path)
         return mp3_path
     except Exception as e:
-        logging.debug(e)
+        log.debug(e)
         return None
 
 
 if __name__ == '__main__':
     video_path = r'/Users/tangly/Documents/文案音频素材/100w本金，怎么挣？.mp4'
-    mp4_2_mp3(video_path)
+    video_2_mp3(video_path)

@@ -2,4 +2,4 @@
 # 输出文件
 !/output/
 # 日志文件
-!/log.log
+/log.log
