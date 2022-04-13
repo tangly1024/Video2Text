@@ -8,3 +8,6 @@
 # IDE
 .idea
 .vscode
+
+# 运行缓存
+__pycache__

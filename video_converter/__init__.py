@@ -18,6 +18,9 @@ def convert_to_text(source_media_path, output_path='./output'):
     :return:
     """
     try:
+        if os.path.exists(source_media_path) != True:
+            raise BaseException('输入文件不存在')
+
         # 获取文件名作为项目名
         project_name = get_file_name_and_extension(source_media_path)[0]
 
