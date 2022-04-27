@@ -11,6 +11,7 @@ def get_file_name_and_extension(file_path):
     :param file_path:
     :return:
     """
+    log.info('获取文件名和扩展 %s' % file_path)
     (filepath, temp_filename) = os.path.split(file_path)
     return os.path.splitext(temp_filename)
 

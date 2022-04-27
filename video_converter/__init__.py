@@ -41,4 +41,4 @@ def convert_to_text(source_media_path, output_path='./output'):
         # 将文本文件组，合并成一个文档
         combine_text(text_array, output_path + '/' + project_name + '.txt')
     except Exception as e:
-        log.error(traceback.format_exc())
+        log.error('视频转文字失败',traceback.format_exc())

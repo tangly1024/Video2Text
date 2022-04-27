@@ -1,6 +1,6 @@
 # Created by .ignore support plugin (hsz.mobi)
 # 输出文件
-!/output/
+/output
 # 日志文件
 /log.log
 # 虚拟环境

@@ -3,6 +3,7 @@
 """
 import os
 from shutil import copyfile
+from numpy import source
 
 from pydub import AudioSegment
 import speech_recognition as sr
@@ -24,6 +25,7 @@ def split_voice_file(voice_file, file_name_prefix, output_path='./', split_lengt
     :param split_length: 每段音频时长默认30秒
     :return: file_array[]
     """
+    log.info("分割音频 %s" % voice_file)
     time_length = get_audio_duration(voice_file)
     # 音频分割输出
     read_audio = AudioSegment.from_wav(voice_file)
@@ -117,6 +119,7 @@ def get_audio_duration(voice_file):
     :return:
     """
     # 获取音频时长
+    log.debug('解析音频时长 %s ' % voice_file)
     f = wave.open(voice_file, "rb")
     duration = int(f.getparams()[3] / f.getparams()[2])
     log.debug('源文件音频总时长 %s s' % duration)
@@ -130,6 +133,8 @@ def convert_media_to_wave(source_file, target_folder):
     :param source_file:
     :return:
     """
+    log.debug('开始转换 %s' % source_file)
+
     if source_file is None or len(str(source_file)) == 0:
         raise BaseException('输入文件地址为空')
     elif '.flv'  in source_file.lower():
@@ -138,15 +143,18 @@ def convert_media_to_wave(source_file, target_folder):
     elif '.mp4' in source_file.lower():
         log.debug('MP4转WAV')
         return mp3_2_wav(video_2_mp3(source_file, target_folder), target_folder)
+    elif '.m4a' in source_file.lower():
+        log.debug('M4A转WAV')
+        return trans_m4a_to_wav(source_file, target_folder)
     elif '.mp3' in source_file.lower():
         log.debug('MP3转WAV')
         return mp3_2_wav(source_file, target_folder)
     elif '.wav' in source_file.lower():
         log.debug('源文件格式为WAV，复制到输出目录下')
         (filepath, temp_filename) = os.path.split(source_file)
-        taarget_file = target_folder + temp_filename
-        copyfile(source_file, taarget_file)
-        return taarget_file
+        target_file = target_folder + temp_filename
+        copyfile(source_file, target_file)
+        return target_file
     else:
         raise BaseException('未知文件格式')
 
@@ -166,8 +174,15 @@ def mp3_2_wav(source_mp3_file, target_folder, jump_exist_file=True):
     mp3_file.export(wav_path, format="wav")
     return wav_path
 
+def trans_m4a_to_wav(source_m4a_file, target_folder, jump_exist_file=True):
+    """
+    m4a转wav
+    """
+    wav_path = target_folder + get_file_name_and_extension(source_m4a_file)[0] + '.wav'
+    m4a_file = AudioSegment.from_file(file=source_m4a_file)
+    m4a_file.export(wav_path, format="wav")
+    return wav_path
 
-# MP3_2_WAV
 
 
 # 将mp4文件转为mp3音频文件,生成路径仍在原路径中(需要先下载moviepy库)
@@ -179,6 +194,7 @@ def video_2_mp3(source_mp4_file, target_folder, jump_exist_file=True):
     :param jump_exist_file: 文件已存在时跳过
     :return:
     """
+    log.info("视频转音频 %s" %  source_mp4_file)
     try:
         mp3_path = target_folder + get_file_name_and_extension(source_mp4_file)[0] + '.wav'
         if jump_exist_file & os.path.exists(mp3_path):
@@ -189,10 +205,10 @@ def video_2_mp3(source_mp4_file, target_folder, jump_exist_file=True):
         mp4_audio.write_audiofile(mp3_path)
         return mp3_path
     except Exception as e:
-        log.debug(e)
+        log.error('视频转音频失败',e)
         return None
 
 
 if __name__ == '__main__':
-    video_path = r'/Users/tangly/Documents/文案音频素材/100w本金，怎么挣？.mp4'
+    video_path = r'[your_voice_path]'
     video_2_mp3(video_path)
