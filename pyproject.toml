@@ -1,0 +1,83 @@
+[tool.poetry]
+name = "video-converter"
+version = "0.1.0"
+description = "A Python video converter with audio processing capabilities"
+authors = ["Your Name <your.email@example.com>"]
+readme = "README.md"
+packages = [{include = "video_converter"}]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+certifi = "2022.12.7"
+charset-normalizer = "3.0.1"
+colorama = "0.4.6"
+colorlog = "6.7.0"
+idna = "3.4"
+numpy = "1.24.2"
+pydub = "0.25.1"
+requests = "2.28.2"
+SpeechRecognition = "3.9.0"
+urllib3 = "1.26.14"
+
+[tool.poetry.group.test.dependencies]
+pytest = "^7.4.0"
+pytest-cov = "^4.1.0"
+pytest-mock = "^3.11.1"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--verbose",
+    "--cov=video_converter",
+    "--cov-report=html:htmlcov",
+    "--cov-report=xml:coverage.xml",
+    "--cov-report=term-missing",
+    "--cov-fail-under=80"
+]
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests", 
+    "slow: Slow tests"
+]
+
+[tool.coverage.run]
+source = ["video_converter"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*",
+    "*/venv/*",
+    "*/virtualenv/*",
+    "*/.pytest_cache/*"
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod"
+]
+ignore_errors = true
+precision = 2
+show_missing = true
+
+[tool.coverage.html]
+directory = "htmlcov"
