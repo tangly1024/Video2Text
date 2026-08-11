@@ -1,37 +1,30 @@
-import os
+from pathlib import Path
+from typing import Iterable
 
-from video_converter.log_utils import get_logger
+from .log_utils import get_logger
 
-log = get_logger('file_utils')
-
-
-def get_file_name_and_extension(file_path):
-    """
-    返回元祖 (file_name,file_extions)
-    :param file_path:
-    :return:
-    """
-    log.info('获取文件名和扩展 %s' % file_path)
-    (filepath, temp_filename) = os.path.split(file_path)
-    return os.path.splitext(temp_filename)
+log = get_logger("files")
 
 
-def combine_text(from_text_array, target_text_file):
-    """
-    合并一组文本文件
-    :param target_text_file:  目标文件名
-    :param from_text_array: 源文本文件数组
-    :return:
-    """
-    log.info('开始合并文件, 数量： %s' % len(from_text_array))
-    with open(target_text_file, 'a+') as k:
-        k.seek(0)
-        k.truncate()  # 从第0行开始清空文件
-        for text_file in from_text_array:
-            log.debug('合并 %s' % text_file)
-            if os.path.exists(text_file):
-                with open(text_file) as f:
-                    k.write(f.read() + "\r\n")
-            else:
-                break
-    log.info('文件合并完成, 目标文件名： %s' % target_text_file)
+def get_file_name_and_extension(file_path: str | Path) -> tuple[str, str]:
+    """Return ``(stem, suffix)`` for compatibility with the original API."""
+    path = Path(file_path)
+    return path.stem, path.suffix
+
+
+def combine_text(
+    from_text_array: Iterable[str | Path], target_text_file: str | Path
+) -> Path:
+    """Merge existing UTF-8 text fragments in order, skipping failed fragments."""
+    fragments: list[str] = []
+    for text_file in map(Path, from_text_array):
+        if text_file.is_file():
+            fragments.append(text_file.read_text(encoding="utf-8").rstrip("\r\n"))
+        else:
+            log.warning("跳过不存在的转写片段: %s", text_file)
+
+    target = Path(target_text_file)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    content = "\n".join(fragment for fragment in fragments if fragment)
+    target.write_text(f"{content}\n" if content else "", encoding="utf-8")
+    return target

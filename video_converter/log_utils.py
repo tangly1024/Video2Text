@@ -1,32 +1,24 @@
 import logging
-import colorlog
-'''
-日志颜色配置
-'''
-log_colors_config = {
-    'DEBUG': 'white',  # cyan white
-    'INFO': 'green',
-    'WARNING': 'yellow',
-    'ERROR': 'red',
-    'CRITICAL': 'bold_red',
-}
 
 
-def get_logger(logger_name):
-    """得到日志对象"""
-    logging.basicConfig(filename='log.log',
-                        format='%(asctime)s - %(pathname)s[line:%(lineno)d] - %(levelname)s: %(message)s',
-                        level=logging.DEBUG)
-    log = logging.getLogger(logger_name)
-    # 控制台输出
-    console = logging.StreamHandler()
-    console.setLevel(logging.DEBUG)
-    console_formatter = colorlog.ColoredFormatter(
-        fmt='%(log_color)s[%(asctime)s.%(msecs)03d] %(filename)s -> %(funcName)s line:%(lineno)d [%(levelname)s] : %(message)s',
-        datefmt='%Y-%m-%d  %H:%M:%S',
-        log_colors=log_colors_config
+def get_logger(logger_name: str) -> logging.Logger:
+    """Return an idempotently configured package logger."""
+    logger = logging.getLogger(f"video2text.{logger_name}")
+    if logger.handlers:
+        return logger
+
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+
+    file_handler = logging.FileHandler("log.log", encoding="utf-8")
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s %(name)s %(levelname)s: %(message)s")
     )
-    console.setFormatter(console_formatter)
-    log.addHandler(console)
-    return log
+    logger.addHandler(file_handler)
 
+    console = logging.StreamHandler()
+    console.setFormatter(
+        logging.Formatter("%(levelname)s %(message)s")
+    )
+    logger.addHandler(console)
+    return logger
