@@ -1,44 +1,57 @@
-from video_converter.voice_utils import convert_media_to_wave, split_voice_file, convert_audios_to_text
-from video_converter.log_utils import get_logger
+"""Video2Text public API."""
+
+from pathlib import Path
+
+from .file_utils import combine_text
+from .log_utils import get_logger
+from .voice_utils import (
+    convert_audios_to_text,
+    convert_media_to_wave,
+    split_voice_file,
+)
+
+log = get_logger("pipeline")
 
 
-import os
-import traceback
+def convert_to_text(
+    source_media_path: str | Path,
+    output_path: str | Path = "./output",
+    *,
+    language: str = "zh-CN",
+    segment_length: int = 30,
+    workers: int = 5,
+) -> Path:
+    """Transcribe one media file and return the merged UTF-8 text path."""
+    source = Path(source_media_path).expanduser()
+    if not source.is_file():
+        raise FileNotFoundError(f"输入文件不存在: {source}")
+    if segment_length <= 0:
+        raise ValueError("segment_length 必须大于 0")
+    if workers <= 0:
+        raise ValueError("workers 必须大于 0")
 
-from . import convert_media_to_wave, split_voice_file, convert_audios_to_text, get_logger
-from .file_utils import get_file_name_and_extension, combine_text
-log = get_logger('file_utils')
+    project_path = Path(output_path).expanduser() / source.stem
+    project_path.mkdir(parents=True, exist_ok=True)
+
+    wave_path = convert_media_to_wave(source, project_path)
+    audio_parts = split_voice_file(
+        wave_path,
+        source.stem,
+        project_path,
+        split_length=segment_length,
+    )
+    text_parts = convert_audios_to_text(
+        audio_parts,
+        max_convert_thread=workers,
+        language=language,
+    )
+    if not text_parts:
+        raise RuntimeError("没有任何音频片段转写成功，请检查网络、语言参数和日志")
+
+    target = project_path / f"{source.stem}.txt"
+    combine_text(text_parts, target)
+    log.info("转写完成: %s", target)
+    return target
 
 
-def convert_to_text(source_media_path, output_path='./output'):
-    """
-    将指定的音频或视频文件转换为文本
-    :param source_media_path: 源文件路径
-    :param output_path: 输出目录
-    :return:
-    """
-    try:
-        if os.path.exists(source_media_path) != True:
-            raise BaseException('输入文件不存在')
-
-        # 获取文件名作为项目名
-        project_name = get_file_name_and_extension(source_media_path)[0]
-
-        # 创建输出文件夹
-        output_path = r'./output/' + project_name + '/'
-        if not os.path.exists(output_path):
-            os.makedirs(output_path)
-
-        # 统一预处理文件 转Wav
-        voice_path = convert_media_to_wave(source_media_path, target_folder=output_path)
-
-        # 根据音频时长分割，过长的文件无法转换
-        split_file_array = split_voice_file(voice_path, project_name, output_path)
-
-        # 批量音频转文字
-        text_array = convert_audios_to_text(split_file_array)
-
-        # 将文本文件组，合并成一个文档
-        combine_text(text_array, output_path + '/' + project_name + '.txt')
-    except Exception as e:
-        log.error('视频转文字失败',traceback.format_exc())
+__all__ = ["convert_to_text"]

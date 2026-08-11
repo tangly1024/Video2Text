@@ -1,214 +1,162 @@
-"""
-音频转码
-"""
-import os
-from shutil import copyfile
-from numpy import source
+"""Media normalization, splitting, and Google Web Speech transcription."""
+
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+import shutil
+import threading
+from typing import Iterable
 
 from pydub import AudioSegment
 import speech_recognition as sr
-import datetime
-import threading
-import wave
-from video_converter.file_utils import get_file_name_and_extension
-from video_converter.log_utils import get_logger
 
-log = get_logger('file_utils')
+from .log_utils import get_logger
+
+log = get_logger("audio")
+SUPPORTED_EXTENSIONS = {".flv", ".m4a", ".mp3", ".mp4", ".wav"}
 
 
+def split_voice_file(
+    voice_file: str | Path,
+    file_name_prefix: str,
+    output_path: str | Path = "./",
+    split_length: int = 30,
+) -> list[str]:
+    """Split a WAV file into chunks with a two-second context overlap."""
+    if split_length <= 0:
+        raise ValueError("split_length 必须大于 0")
 
-def split_voice_file(voice_file, file_name_prefix, output_path='./', split_length=30):
-    """
-    根据音频文件时长分割
-    :param file_name_prefix:
-    :param voice_file:
-    :param split_length: 每段音频时长默认30秒
-    :return: file_array[]
-    """
-    log.info("分割音频 %s" % voice_file)
-    time_length = get_audio_duration(voice_file)
-    # 音频分割输出
-    read_audio = AudioSegment.from_wav(voice_file)
-    # 创建分割输出文件夹
-    split_folder_path = r'%s/split/' % output_path
-    if not os.path.exists(split_folder_path):
-        os.makedirs(split_folder_path)
+    with Path(voice_file).open("rb") as source:
+        audio = AudioSegment.from_wav(source)
+    split_folder = Path(output_path) / "split"
+    split_folder.mkdir(parents=True, exist_ok=True)
+    segment_ms = split_length * 1000
+    overlap_ms = 2000
+    result: list[str] = []
 
-    # 每段音频30s
-    kn = int(time_length / 30) + 1
-    res = []
-    for i in range(kn):
-        suffix = (str(i + 1)).zfill(2)
-        out_put_file_path = split_folder_path + '%s-%s.wav' % (file_name_prefix, suffix)
-        read_audio[i * 30 * 1000:((i + 1) * 30 + 2) * 1000].export(out_put_file_path, format="wav")
-        res.append(out_put_file_path)
-    log.debug('源文件分割为[%s]个时长[%s]s的子文件' % (len(res), split_length))
-    return res
+    for index, start in enumerate(range(0, len(audio), segment_ms), start=1):
+        target = split_folder / f"{file_name_prefix}-{index:02d}.wav"
+        exported = audio[
+            start : min(start + segment_ms + overlap_ms, len(audio))
+        ].export(target, format="wav")
+        exported.close()
+        result.append(str(target))
 
-
-def convert_audios_to_text(file_array, max_convert_thread=5, jump_exists_file=True):
-    """
-    将音频数组批量转文字
-    :param max_convert_thread: 同时转换文件线程的上限
-    :param file_array: 分割后的音频文件路径
-    :param jump_exists_file: 是否跳过已存在的文件
-    :return: text_path_array[] 返回转换好的文本文件数组
-    """
-    # 获取文件夹下的音频文件名
-    start_time = datetime.datetime.now()
-    threads = []
-    # 信号量 控制API并发请求数
-    semaphore = threading.BoundedSemaphore(max_convert_thread)
-    return_text_array = []
-    r = sr.Recognizer()
-
-    log.debug('启动[%s]个线程对音频文件进行批量转换' % max_convert_thread)
-    for voice_file in file_array:
-        dest_file_path = voice_file.replace('.wav', '.txt')
-        if jump_exists_file & os.path.exists(dest_file_path):
-            log.warn('跳过已存在文件,跳过转换 %s' % dest_file_path)
-            return_text_array.append(dest_file_path)
-            continue
-        t = threading.Thread(target=convert_by_google,
-                             args=(voice_file, dest_file_path, semaphore, r,),
-                             name=voice_file)
-        return_text_array.append(dest_file_path)
-        threads.append(t)
-        t.start()
-
-    # 等待所有线程任务结束。
-    for t in threads:
-        t.join()
-    end_time = datetime.datetime.now()
-    last = end_time - start_time
-    log.info('音频转换总耗时：[%s]s' % last)
-    return return_text_array
+    log.info("音频已分为 %s 个 %ss 片段", len(result), split_length)
+    return result
 
 
-def convert_by_google(voice_file, dst_file_name, semaphore, r):
-    """
-    使用google的speech-to-text进行转换 https://cloud.google.com/speech-to-text?hl=zh-cn
-    :param voice_file:
-    :param dst_file_name:
-    :param semaphore:
-    :param r:
-    :return:
-    """
-    try:
+def convert_audios_to_text(
+    file_array: Iterable[str | Path],
+    max_convert_thread: int = 5,
+    jump_exists_file: bool = True,
+    language: str = "zh-CN",
+) -> list[str]:
+    """Transcribe audio chunks concurrently and return successful text paths."""
+    if max_convert_thread <= 0:
+        raise ValueError("max_convert_thread 必须大于 0")
+
+    def convert(voice_file: str | Path) -> str | None:
+        destination_path = Path(voice_file).with_suffix(".txt")
+        destination = str(destination_path)
+        if (
+            jump_exists_file
+            and destination_path.is_file()
+            and destination_path.stat().st_size > 0
+        ):
+            log.info("复用已有转写片段: %s", destination)
+            return destination
+        return convert_by_google(voice_file, destination, language=language)
+
+    files = list(file_array)
+    with ThreadPoolExecutor(max_workers=max_convert_thread) as executor:
+        results = executor.map(convert, files)
+    return [result for result in results if result]
+
+
+def convert_by_google(
+    voice_file: str | Path,
+    dst_file_name: str | Path,
+    semaphore: threading.Semaphore | None = None,
+    recognizer: sr.Recognizer | None = None,
+    language: str = "zh-CN",
+) -> str | None:
+    """Transcribe one WAV file through SpeechRecognition's Google backend."""
+    if semaphore:
         semaphore.acquire()
-        with sr.WavFile(voice_file) as source:
-            log.debug("正在转换 %s ；目标位置 %s" % (voice_file, dst_file_name))
-            # 如果目标文件已经存在就不重新创建
-            audio = r.record(source)
-            # text = r.recognize_ibm(audio, username='IBM_USERNAME', password='IBM_PASSWORD', language='zh-CN')
-            text = r.recognize_google(audio, language='zh-CN')
-            open(dst_file_name, 'a+').write(text)
-            temp_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            log.debug('转换完成 %s %s' % (temp_time, dst_file_name))
-    except:
-        temp_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        log.error('失败 %s %s' % (temp_time, dst_file_name))
-    finally:
-        semaphore.release()
-
-
-def get_audio_duration(voice_file):
-    """
-    获取音频时长
-    :param voice_file:
-    :return:
-    """
-    # 获取音频时长
-    log.debug('解析音频时长 %s ' % voice_file)
-    f = wave.open(voice_file, "rb")
-    duration = int(f.getparams()[3] / f.getparams()[2])
-    log.debug('源文件音频总时长 %s s' % duration)
-    return duration
-
-
-def convert_media_to_wave(source_file, target_folder):
-    """
-    统一将mp3,mp4转化为wav格式
-    :param target_folder: 目标文件夹
-    :param source_file:
-    :return:
-    """
-    log.debug('开始转换 %s' % source_file)
-
-    if source_file is None or len(str(source_file)) == 0:
-        raise BaseException('输入文件地址为空')
-    elif '.flv'  in source_file.lower():
-        log.debug('FLV转WAV')
-        return mp3_2_wav(video_2_mp3(source_file, target_folder), target_folder)
-    elif '.mp4' in source_file.lower():
-        log.debug('MP4转WAV')
-        return mp3_2_wav(video_2_mp3(source_file, target_folder), target_folder)
-    elif '.m4a' in source_file.lower():
-        log.debug('M4A转WAV')
-        return trans_m4a_to_wav(source_file, target_folder)
-    elif '.mp3' in source_file.lower():
-        log.debug('MP3转WAV')
-        return mp3_2_wav(source_file, target_folder)
-    elif '.wav' in source_file.lower():
-        log.debug('源文件格式为WAV，复制到输出目录下')
-        (filepath, temp_filename) = os.path.split(source_file)
-        target_file = target_folder + temp_filename
-        copyfile(source_file, target_file)
-        return target_file
-    else:
-        raise BaseException('未知文件格式')
-
-
-def mp3_2_wav(source_mp3_file, target_folder, jump_exist_file=True):
-    """
-    这是MP3文件转化成WAV文件的函数
-    :param jump_exist_file: 目标文件存在时跳过
-    :param target_folder: 目标文件夹
-    :param source_mp3_file: 源MP3文件的地址
-    :param wav_path: WAV文件的地址
-    """
-    wav_path = target_folder + get_file_name_and_extension(source_mp3_file)[0] + '.wav'
-    if jump_exist_file & os.path.exists(wav_path):
-        return wav_path
-    mp3_file = AudioSegment.from_mp3(file=source_mp3_file)
-    mp3_file.export(wav_path, format="wav")
-    return wav_path
-
-def trans_m4a_to_wav(source_m4a_file, target_folder, jump_exist_file=True):
-    """
-    m4a转wav
-    """
-    wav_path = target_folder + get_file_name_and_extension(source_m4a_file)[0] + '.wav'
-    m4a_file = AudioSegment.from_file(file=source_m4a_file)
-    m4a_file.export(wav_path, format="wav")
-    return wav_path
-
-
-
-# 将mp4文件转为mp3音频文件,生成路径仍在原路径中(需要先下载moviepy库)
-def video_2_mp3(source_mp4_file, target_folder, jump_exist_file=True):
-    """
-    MP4文件转MP3音频
-    :param source_mp4_file: 源文件地址
-    :param target_folder:  目标文件夹
-    :param jump_exist_file: 文件已存在时跳过
-    :return:
-    """
-    log.info("视频转音频 %s" %  source_mp4_file)
     try:
-        mp3_path = target_folder + get_file_name_and_extension(source_mp4_file)[0] + '.wav'
-        if jump_exist_file & os.path.exists(mp3_path):
-            return mp3_path
-        from moviepy.video.io.VideoFileClip import VideoFileClip
-        mp4_video = VideoFileClip(source_mp4_file)
-        mp4_audio = mp4_video.audio
-        mp4_audio.write_audiofile(mp3_path)
-        return mp3_path
-    except Exception as e:
-        log.error('视频转音频失败',e)
-        return None
+        recognizer = recognizer or sr.Recognizer()
+        with sr.AudioFile(str(voice_file)) as source:
+            audio = recognizer.record(source)
+        text = recognizer.recognize_google(audio, language=language)
+        destination = Path(dst_file_name)
+        destination.write_text(text, encoding="utf-8")
+        return str(destination)
+    except sr.UnknownValueError:
+        log.warning("无法识别音频片段: %s", voice_file)
+    except sr.RequestError as error:
+        log.error("Google 语音服务请求失败 (%s): %s", voice_file, error)
+    except (OSError, ValueError) as error:
+        log.error("音频片段处理失败 (%s): %s", voice_file, error)
+    finally:
+        if semaphore:
+            semaphore.release()
+    return None
 
 
-if __name__ == '__main__':
-    video_path = r'[your_voice_path]'
-    video_2_mp3(video_path)
+def get_audio_duration(voice_file: str | Path) -> int:
+    """Return whole seconds for an audio file."""
+    with Path(voice_file).open("rb") as source:
+        return len(AudioSegment.from_file(source)) // 1000
+
+
+def convert_media_to_wave(
+    source_file: str | Path, target_folder: str | Path
+) -> str:
+    """Normalize a supported media file to WAV using pydub/FFmpeg."""
+    source = Path(source_file)
+    if not source.is_file():
+        raise FileNotFoundError(f"输入文件不存在: {source}")
+    if source.suffix.lower() not in SUPPORTED_EXTENSIONS:
+        supported = ", ".join(sorted(SUPPORTED_EXTENSIONS))
+        raise ValueError(f"不支持 {source.suffix or '无扩展名'}；支持: {supported}")
+
+    target_folder = Path(target_folder)
+    target_folder.mkdir(parents=True, exist_ok=True)
+    target = target_folder / f"{source.stem}.wav"
+    if target.exists():
+        return str(target)
+    if source.suffix.lower() == ".wav":
+        shutil.copy2(source, target)
+    else:
+        with source.open("rb") as media:
+            audio = AudioSegment.from_file(media)
+        exported = audio.export(target, format="wav")
+        exported.close()
+    return str(target)
+
+
+def mp3_2_wav(
+    source_mp3_file: str | Path,
+    target_folder: str | Path,
+    jump_exist_file: bool = True,
+) -> str:
+    """Backward-compatible wrapper for MP3 conversion."""
+    return convert_media_to_wave(source_mp3_file, target_folder)
+
+
+def trans_m4a_to_wav(
+    source_m4a_file: str | Path,
+    target_folder: str | Path,
+    jump_exist_file: bool = True,
+) -> str:
+    """Backward-compatible wrapper for M4A conversion."""
+    return convert_media_to_wave(source_m4a_file, target_folder)
+
+
+def video_2_mp3(
+    source_mp4_file: str | Path,
+    target_folder: str | Path,
+    jump_exist_file: bool = True,
+) -> str:
+    """Backward-compatible wrapper; the historical function returns WAV."""
+    return convert_media_to_wave(source_mp4_file, target_folder)

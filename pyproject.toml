@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "video2text"
+version = "0.2.0"
+description = "A small local-first audio and video transcription tool"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "pydub>=0.25.1,<0.26",
+  "SpeechRecognition>=3.10,<4",
+]
+
+[project.scripts]
+video2text = "video_converter.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["video_converter*"]
