@@ -2,6 +2,7 @@
 
 import argparse
 from collections.abc import Sequence
+import sys
 
 from . import convert_to_text
 
@@ -26,6 +27,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
