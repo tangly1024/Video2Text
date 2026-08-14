@@ -15,6 +15,7 @@ dependencies = [
 
 [project.scripts]
 video2text = "video_converter.cli:main"
+video2text-ui = "video_converter.web_ui:main"
 
 [tool.setuptools.packages.find]
 include = ["video_converter*"]
